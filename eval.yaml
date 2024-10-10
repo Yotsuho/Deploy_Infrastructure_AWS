@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation VPC Template
+Resources:
+  MyVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 172.16.0.0/16
+      Tags:
+        - Key: Name
+          Value: 'MainVPC'
+  PrivateSubnet1:
+    Type : AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref : MyVPC
+        CidrBlock: 172.16.200.0/24
+        AvailabilityZone: us-east-1a
+        Tags:
+          - Key: Name
+            Value: 'SR1-Private-A'
+  PrivateSubnet2:
+    Type : AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref : MyVPC
+        CidrBlock: 172.16.201.0/24
+        AvailabilityZone: us-east-1b
+        Tags:
+          - Key: Name
+            Value: 'SR1-Private-B'
+  PublicSubnet1:
+    Type : AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref : MyVPC
+        CidrBlock: 172.16.100.0/24
+        AvailabilityZone: us-east-1c
+        Tags:
+          - Key: Name
+            Value: 'SR1-Public-A'
+  PublicSubnet2:
+    Type : AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref : MyVPC
+        CidrBlock: 172.16.101.0/24
+        AvailabilityZone: us-east-1d
+        Tags:
+          - Key: Name
+            Value: 'SR1-Public-B'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: 'GatewayVPC'
+  AttachInternetGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachement'
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+  ElasticIPA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: 'ElasticIPA'
+  ElasticIPB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: 'ElasticIPB'
+  NatGatewayA:
+    DependsOn: AttachInternetGateway
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt ElasticIPA.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key : Name
+          Value: 'NATGatewayPrivateA'
+  NatGatewayB:
+    DependsOn: AttachInternetGateway
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt ElasticIPA.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key : Name
+          Value: 'NATGatewayPrivateB'
+  PublicRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: 'RouteTablePublicA'
+  AttachPublicRouteTableA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTableA
+      SubnetId: !Ref PublicSubnet1
+  PublicRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: 'RouteTablePublicA'
+  AttachPublicRouteTableB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTableB
+      SubnetId: !Ref PublicSubnet2
+  
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: 'RouteTablePublicA'
+  AttachPrivateRouteTableA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      SubnetId: !Ref PrivateSubnet1
+  
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: 'RouteTablePrivateB'
+  AttachPrivateRouteTableB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      SubnetId: !Ref PrivateSubnet2
+  
+  PublicRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTableA
+
+  PublicRouteB:
+    Type: AWS::EC2::Route 
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTableB
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+      RouteTableId: !Ref PrivateRouteTableA
+  
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+      RouteTableId: !Ref PrivateRouteB
+
+  MyDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBSecurityGroups:
+      - Ref: MyDbSecurityByEC2SecurityGroup
+      - Ref: MyDbSecurityByCIDRIPGroup
+      AllocatedStorage: '5'
+      DBInstanceClass: db.t2.micro
+      Engine: MySQL
+      MasterUsername: MyName
+      ManageMasterUserPassword: true
+      MasterUserSecret:
+        KmsKeyId: !Ref KMSKey
+    DeletionPolicy: Snapshot
+
+  MyDbSecurityByCIDRIPGroup:
+    Type: AWS::RDS::DBSecurityGroup
+    Properties:
+      GroupDescription: Ingress for CIDRIP
+      DBSecurityGroupIngress:
+        CIDRIP: "172.16.200.0/24"
+
+  DBEC2SecurityGroup:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    GroupDescription: Open database for access
+    SecurityGroupIngress:
+    - IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupName:
+        Ref: WebServerSecurityGroup
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName:
+        Ref: DBName
+      Engine: MySQL
+      MultiAZ:
+        Ref: MultiAZDatabase
+      MasterUsername:
+        Ref: DBUser
+      DBInstanceClass:
+        Ref: DBClass
+      AllocatedStorage:
+        Ref: DBAllocatedStorage
+      MasterUserPassword:
+        Ref: DBPassword
+      VPCSecurityGroups:
+      - !GetAtt DBEC2SecurityGroup.GroupId
+
+  DBinstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '5'
+      DBInstanceClass: db.t2.small
+      DBName:
+        Ref: MyDBName
+      DBSecurityGroups:
+      - Ref: DbSecurityByEC2SecurityGroup
+      DBSubnetGroupName:
+        Ref: MyDBSubnetGroup
+      Engine: MySQL
+      MasterUserPassword:
+        Ref: MyDBPassword
+      MasterUsername:
+        Ref: MyDBUsername
+    DeletionPolicy: Snapshot
+  DbSecurityByEC2SecurityGroup:
+    Type: AWS::RDS::DBSecurityGroup
+    Properties:
+      GroupDescription: Ingress for Amazon EC2 security group
+      EC2VpcId:
+        Ref: MyVPC
+      DBSecurityGroupIngress:
+      - EC2SecurityGroupId: sg-b0ff1111
+        EC2SecurityGroupOwnerId: '111122223333'
+      - EC2SecurityGroupId: sg-ffd722222
+        EC2SecurityGroupOwnerId: '111122223333'
+
+  DBInstanceA:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName:
+        Ref: DBName
+      Engine: MySQL
+      MasterUsername:
+        Ref: DBUsername
+      DBInstanceClass:
+        Ref: DBClass
+      DBSecurityGroups:
+      - Ref: DBSecurityGroup
+      AllocatedStorage:
+        Ref: DBAllocatedStorage
+      MasterUserPassword:
+        Ref: DBPassword
+DBSecurityGroup:
+  Type: AWS::RDS::DBSecurityGroup
+  Properties:
+    DBSecurityGroupIngress:
+      EC2SecurityGroupName:
+        Ref: WebServerSecurityGroup
+    GroupDescription: Frontend Access
+WebServerSecurityGroup:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    GroupDescription: Enable HTTP access via port 80 and SSH access
+    SecurityGroupIngress:
+    - IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+    - IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+  
+
+            
+  
+
+
+        
+      
